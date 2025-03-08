@@ -1,0 +1,189 @@
+name: Build and Push Docker Image
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  # 可以添加其他触发条件，例如定时或推送到特定分支
+  # push:
+  #   branches: [ main ]
+  # schedule:
+  #   - cron: '0 0 * * 0'  # 每周日UTC 00:00执行
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile << 'EOF'
+          FROM python:3.10-slim
+
+          # 设置工作目录
+          WORKDIR /app
+
+          # 安装cron和Git
+          RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+
+          # 复制项目文件
+          COPY . .
+
+          # 安装项目依赖
+          RUN pip install --no-cache-dir -r requirements.txt
+
+          # 设置时区
+          ENV TZ=Asia/Shanghai
+          RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+          # 创建cron任务
+          RUN echo "# Checkin - 每天02:45执行\n\
+          45 2 * * * cd /app && python ./.github/actions/checkin/universal.py >> /var/log/cron.log 2>&1\n\
+          \n\
+          # Process - 每天03:05和11:05执行\n\
+          5 3,11 * * * cd /app && python -u subscribe/process.py --overwrite >> /var/log/cron.log 2>&1\n\
+          \n\
+          # Refresh - 每2小时执行一次\n\
+          0 */2 * * * cd /app && python -u subscribe/collect.py --all --refresh --overwrite --skip >> /var/log/cron.log 2>&1\n\
+          \n\
+          # Collect - 每周一00:00执行\n\
+          0 0 * * 1 cd /app && python -u subscribe/collect.py --all --overwrite --skip >> /var/log/cron.log 2>&1\n\
+          \n\
+          # 记录时间戳\n\
+          * * * * * date '+\%Y-\%m-\%d \%H:\%M:\%S' >> /var/log/cron.log 2>&1\n" > /etc/cron.d/app-cron
+          
+          RUN chmod 0644 /etc/cron.d/app-cron && crontab /etc/cron.d/app-cron
+
+          # 创建启动脚本
+          RUN echo '#!/bin/bash\n\
+          \n\
+          # 创建日志文件\n\
+          touch /var/log/cron.log\n\
+          \n\
+          # 必需的环境变量检查\n\
+          if [ -z "$GIST_PAT" ]; then\n\
+            echo "错误: 必需的环境变量 GIST_PAT 未设置"\n\
+            exit 1\n\
+          fi\n\
+          \n\
+          if [ -z "$GIST_LINK" ]; then\n\
+            echo "错误: 必需的环境变量 GIST_LINK 未设置"\n\
+            exit 1\n\
+          fi\n\
+          \n\
+          # 验证GIST_LINK格式\n\
+          LINK_PARTS=$(echo "$GIST_LINK" | awk -F"/" "NF==2 && \$1!=\"\" && \$2!=\"\"")\n\
+          if [ -z "$LINK_PARTS" ]; then\n\
+            echo "错误: GIST_LINK 格式无效，应为 username/gist_id 格式"\n\
+           exit 1\n\
+          fi\n\
+          \n\
+          # 启动cron服务\n\
+          cron\n\
+          \n\
+          # 让容器保持运行并输出日志\n\
+          tail -f /var/log/cron.log\n' > /entrypoint.sh
+          
+          RUN chmod +x /entrypoint.sh
+
+          # 启动命令
+          ENTRYPOINT ["/entrypoint.sh"]
+          EOF
+
+      - name: Create README for Docker Hub
+        run: |
+          cat > README.docker.md << 'EOF'
+          # Automated Task Runner
+
+          这个Docker镜像用于自动运行任务，包括签到、处理、刷新和收集操作。
+
+          ## 环境变量
+
+          启动容器时需要设置以下环境变量：
+
+          - `GIST_PAT`: GitHub访问令牌
+          - `GIST_LINK`: GitHub用户名和gist ID，格式为"username/gist_id"
+          - `CUSTOMIZE_LINK`: 自定义链接URL
+          - `ENABLE_SPECIAL_PROTOCOLS`: 是否启用特殊协议
+          - `SUBSCRIBE_CONF`: 订阅配置
+          - `PUSH_TOKEN`: 推送令牌
+          - `REACHABLE`: 网络可达性
+          - `SKIP_ALIVE_CHECK`: 是否跳过连接检查
+          - `SKIP_REMARK`: 是否跳过备注
+          - `WORKFLOW_MODE`: 工作流模式
+
+          ## 使用方法
+
+          ```bash
+          docker run -d \
+            -e GIST_PAT=your_github_token \
+            -e GIST_LINK=username/gist_id \
+            -e CUSTOMIZE_LINK=your_customize_link \
+            -e ENABLE_SPECIAL_PROTOCOLS=true \
+            -e SUBSCRIBE_CONF=your_subscribe_conf \
+            -e PUSH_TOKEN=your_push_token \
+            -e REACHABLE=true \
+            -e SKIP_ALIVE_CHECK=false \
+            -e SKIP_REMARK=false \
+            -e WORKFLOW_MODE=your_workflow_mode \
+            --name task-runner \
+            your-username/your-image-name:latest
+          ```
+
+          或者使用docker-compose:
+
+          ```yaml
+          version: '3'
+
+          services:
+            task-runner:
+              image: your-username/your-image-name:latest
+              container_name: task-runner
+              restart: always
+              environment:
+                - GIST_PAT=your_github_token
+                - GIST_LINK=username/gist_id
+                - CUSTOMIZE_LINK=your_customize_link
+                - ENABLE_SPECIAL_PROTOCOLS=true
+                - SUBSCRIBE_CONF=your_subscribe_conf
+                - PUSH_TOKEN=your_push_token
+                - REACHABLE=true
+                - SKIP_ALIVE_CHECK=false
+                - SKIP_REMARK=false
+                - WORKFLOW_MODE=your_workflow_mode
+              volumes:
+                - ./logs:/var/log
+          ```
+          EOF
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/task-runner:latest,${{ secrets.DOCKERHUB_USERNAME }}/task-runner:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          # 如果要使用README为Docker Hub提供说明
+          labels: |
+            org.opencontainers.image.title=Task Runner
+            org.opencontainers.image.description=Automated task runner with scheduled jobs
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Update Docker Hub Description
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/task-runner
+          readme-filepath: ./README.docker.md
+          short-description: "Automated task runner with scheduled jobs"
