@@ -310,8 +310,9 @@ jobs:
           cron\n\
           \n\
           # 启动Web服务器\n\
-          cd /app/web_interface\n\
-          exec gunicorn --bind 0.0.0.0:${PORT:-8000} app:app\n' > /entrypoint.sh
+          # 启动Web服务器
+          cd /app/web_interface
+          exec gunicorn --bind 0.0.0.0:${PORT:-8000} --timeout 1200 app:app
           
           RUN chmod +x /entrypoint.sh
 
