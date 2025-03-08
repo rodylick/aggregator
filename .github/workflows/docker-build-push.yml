@@ -1,13 +1,8 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image for Render
 
 on:
-  # 手动触发
   workflow_dispatch:
-  # 可以添加其他触发条件，例如定时或推送到特定分支
-  # push:
-  #   branches: [ main ]
-  # schedule:
-  #   - cron: '0 0 * * 0'  # 每周日UTC 00:00执行
+  # 可以添加其他触发条件，如推送或定时
 
 jobs:
   build-and-push:
@@ -25,6 +20,232 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Create web interface files
+        run: |
+          mkdir -p web_interface
+          
+          # 创建主HTML文件
+          cat > web_interface/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="zh-CN">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>任务管理器</title>
+              <style>
+                  body {
+                      font-family: Arial, sans-serif;
+                      max-width: 800px;
+                      margin: 0 auto;
+                      padding: 20px;
+                      background-color: #f5f5f5;
+                  }
+                  h1 {
+                      color: #333;
+                      text-align: center;
+                  }
+                  .card {
+                      background: white;
+                      border-radius: 8px;
+                      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                      margin-bottom: 20px;
+                      padding: 15px;
+                  }
+                  button {
+                      background-color: #4CAF50;
+                      border: none;
+                      color: white;
+                      padding: 10px 15px;
+                      text-align: center;
+                      text-decoration: none;
+                      display: inline-block;
+                      font-size: 16px;
+                      margin: 4px 2px;
+                      cursor: pointer;
+                      border-radius: 4px;
+                  }
+                  button:hover {
+                      background-color: #45a049;
+                  }
+                  pre {
+                      background-color: #f8f8f8;
+                      border: 1px solid #ddd;
+                      border-radius: 4px;
+                      padding: 10px;
+                      overflow-x: auto;
+                  }
+                  .task-output {
+                      margin-top: 10px;
+                      display: none;
+                  }
+                  .task-title {
+                      font-weight: bold;
+                      margin-bottom: 10px;
+                  }
+                  .task-description {
+                      margin-bottom: 15px;
+                      color: #666;
+                  }
+                  .footer {
+                      text-align: center;
+                      margin-top: 30px;
+                      color: #777;
+                  }
+              </style>
+          </head>
+          <body>
+              <h1>任务管理器</h1>
+              
+              <div class="card">
+                  <div class="task-title">签到任务</div>
+                  <div class="task-description">执行签到操作，通常用于每日流量签到。</div>
+                  <button onclick="runTask('checkin')">运行签到</button>
+                  <div id="checkin-output" class="task-output">
+                      <pre id="checkin-result">等待运行...</pre>
+                  </div>
+              </div>
+              
+              <div class="card">
+                  <div class="task-title">处理任务</div>
+                  <div class="task-description">处理网络代理聚合配置。</div>
+                  <button onclick="runTask('process')">运行处理</button>
+                  <div id="process-output" class="task-output">
+                      <pre id="process-result">等待运行...</pre>
+                  </div>
+              </div>
+              
+              <div class="card">
+                  <div class="task-title">刷新任务</div>
+                  <div class="task-description">刷新并更新所有节点信息。</div>
+                  <button onclick="runTask('refresh')">运行刷新</button>
+                  <div id="refresh-output" class="task-output">
+                      <pre id="refresh-result">等待运行...</pre>
+                  </div>
+              </div>
+              
+              <div class="card">
+                  <div class="task-title">收集任务</div>
+                  <div class="task-description">收集所有节点信息并保存。</div>
+                  <button onclick="runTask('collect')">运行收集</button>
+                  <div id="collect-output" class="task-output">
+                      <pre id="collect-result">等待运行...</pre>
+                  </div>
+              </div>
+              
+              <div class="card">
+                  <div class="task-title">定时任务状态</div>
+                  <div class="task-description">查看当前系统中的定时任务状态。</div>
+                  <button onclick="runTask('cron')">查看定时任务</button>
+                  <div id="cron-output" class="task-output">
+                      <pre id="cron-result">等待运行...</pre>
+                  </div>
+              </div>
+              
+              <div class="card">
+                  <div class="task-title">日志查看</div>
+                  <div class="task-description">查看最近的运行日志。</div>
+                  <button onclick="runTask('log')">查看日志</button>
+                  <div id="log-output" class="task-output">
+                      <pre id="log-result">等待运行...</pre>
+                  </div>
+              </div>
+              
+              <div class="footer">
+                  <p>系统定时任务将按计划自动运行。此界面用于手动触发任务或查看状态。</p>
+              </div>
+              
+              <script>
+              function runTask(task) {
+                  const outputDiv = document.getElementById(`${task}-output`);
+                  const resultPre = document.getElementById(`${task}-result`);
+                  
+                  // 显示输出区域并设置为"正在运行"
+                  outputDiv.style.display = "block";
+                  resultPre.innerText = "正在运行...";
+                  
+                  // 发送请求到后端
+                  fetch(`/run/${task}`, {
+                      method: 'POST',
+                  })
+                  .then(response => response.text())
+                  .then(data => {
+                      resultPre.innerText = data;
+                  })
+                  .catch(error => {
+                      resultPre.innerText = `错误: ${error.message}`;
+                  });
+              }
+              </script>
+          </body>
+          </html>
+          EOF
+          
+          # 创建Flask应用
+          cat > web_interface/app.py << 'EOF'
+          import os
+          import subprocess
+          import time
+          from flask import Flask, render_template, request, send_from_directory
+          
+          app = Flask(__name__)
+          
+          # 日志文件路径
+          LOG_FILE = '/var/log/cron.log'
+          
+          # 任务命令映射
+          TASK_COMMANDS = {
+              'checkin': 'cd /app && python ./.github/actions/checkin/universal.py',
+              'process': 'cd /app && python -u subscribe/process.py --overwrite',
+              'refresh': 'cd /app && python -u subscribe/collect.py --all --refresh --overwrite --skip',
+              'collect': 'cd /app && python -u subscribe/collect.py --all --overwrite --skip',
+              'cron': 'crontab -l',
+              'log': f'tail -n 100 {LOG_FILE}'
+          }
+          
+          @app.route('/')
+          def index():
+              return send_from_directory('.', 'index.html')
+          
+          @app.route('/run/<task>', methods=['POST'])
+          def run_task(task):
+              if task not in TASK_COMMANDS:
+                  return "未知任务", 400
+                  
+              try:
+                  # 执行任务
+                  cmd = TASK_COMMANDS[task]
+                  result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                  
+                  # 添加时间戳
+                  timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                  output = f"[{timestamp}] 任务执行结果:\n\n"
+                  
+                  # 添加命令输出
+                  if result.stdout:
+                      output += result.stdout
+                  
+                  # 添加错误输出
+                  if result.stderr:
+                      output += "\n错误输出:\n" + result.stderr
+                      
+                  # 添加执行状态
+                  exit_code = result.returncode
+                  output += f"\n\n执行状态: {'成功' if exit_code == 0 else f'失败 (错误码: {exit_code})'}"
+                  
+                  return output
+              except Exception as e:
+                  return f"执行过程中出错: {str(e)}", 500
+          
+          if __name__ == '__main__':
+              # 创建日志文件
+              if not os.path.exists(LOG_FILE):
+                  with open(LOG_FILE, 'w') as f:
+                      pass
+                      
+              # 启动Flask应用
+              app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8000)))
+          EOF
+
       - name: Create Dockerfile
         run: |
           cat > Dockerfile << 'EOF'
@@ -33,7 +254,7 @@ jobs:
           # 设置工作目录
           WORKDIR /app
 
-          # 安装cron和Git
+          # 安装cron和其他必要软件
           RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 
           # 复制项目文件
@@ -41,6 +262,9 @@ jobs:
 
           # 安装项目依赖
           RUN pip install --no-cache-dir -r requirements.txt
+
+          # 安装Flask用于Web界面
+          RUN pip install flask gunicorn
 
           # 设置时区
           ENV TZ=Asia/Shanghai
@@ -60,9 +284,12 @@ jobs:
           0 0 * * 1 cd /app && python -u subscribe/collect.py --all --overwrite --skip >> /var/log/cron.log 2>&1\n\
           \n\
           # 记录时间戳\n\
-          * * * * * date '+\%Y-\%m-\%d \%H:\%M:\%S' >> /var/log/cron.log 2>&1\n" > /etc/cron.d/app-cron
+          0 * * * * date '+\%Y-\%m-\%d \%H:\%M:\%S' >> /var/log/cron.log 2>&1\n" > /etc/cron.d/app-cron
           
           RUN chmod 0644 /etc/cron.d/app-cron && crontab /etc/cron.d/app-cron
+
+          # 复制Web界面文件
+          COPY web_interface/ /app/web_interface/
 
           # 创建启动脚本
           RUN echo '#!/bin/bash\n\
@@ -72,29 +299,24 @@ jobs:
           \n\
           # 必需的环境变量检查\n\
           if [ -z "$GIST_PAT" ]; then\n\
-            echo "错误: 必需的环境变量 GIST_PAT 未设置"\n\
-            exit 1\n\
+            echo "警告: 环境变量 GIST_PAT 未设置，某些功能可能不正常工作"\n\
           fi\n\
           \n\
           if [ -z "$GIST_LINK" ]; then\n\
-            echo "错误: 必需的环境变量 GIST_LINK 未设置"\n\
-            exit 1\n\
-          fi\n\
-          \n\
-          # 验证GIST_LINK格式\n\
-          LINK_PARTS=$(echo "$GIST_LINK" | awk -F"/" "NF==2 && \$1!=\"\" && \$2!=\"\"")\n\
-          if [ -z "$LINK_PARTS" ]; then\n\
-            echo "错误: GIST_LINK 格式无效，应为 username/gist_id 格式"\n\
-           exit 1\n\
+            echo "警告: 环境变量 GIST_LINK 未设置，某些功能可能不正常工作"\n\
           fi\n\
           \n\
           # 启动cron服务\n\
           cron\n\
           \n\
-          # 让容器保持运行并输出日志\n\
-          tail -f /var/log/cron.log\n' > /entrypoint.sh
+          # 启动Web服务器\n\
+          cd /app/web_interface\n\
+          exec gunicorn --bind 0.0.0.0:${PORT:-8000} app:app\n' > /entrypoint.sh
           
           RUN chmod +x /entrypoint.sh
+
+          # 暴露端口(Render会通过PORT环境变量设置)
+          EXPOSE 8000
 
           # 启动命令
           ENTRYPOINT ["/entrypoint.sh"]
@@ -103,16 +325,26 @@ jobs:
       - name: Create README for Docker Hub
         run: |
           cat > README.docker.md << 'EOF'
-          # Automated Task Runner
+          # 任务管理器 Docker 镜像
 
-          这个Docker镜像用于自动运行任务，包括签到、处理、刷新和收集操作。
+          这个Docker镜像提供自动化的任务执行功能，包括签到、处理、刷新和收集操作。特别设计用于在Render.com等平台上运行。
+
+          ## 特点
+
+          - 内置Web界面用于手动触发任务
+          - 自动运行定时任务
+          - 适用于Render.com和其他云平台
 
           ## 环境变量
 
-          启动容器时需要设置以下环境变量：
+          ### 必需的环境变量
+          - `PORT`: Web服务器端口（Render会自动提供）
 
+          ### 推荐的环境变量
           - `GIST_PAT`: GitHub访问令牌
           - `GIST_LINK`: GitHub用户名和gist ID，格式为"username/gist_id"
+
+          ### 可选的环境变量
           - `CUSTOMIZE_LINK`: 自定义链接URL
           - `ENABLE_SPECIAL_PROTOCOLS`: 是否启用特殊协议
           - `SUBSCRIBE_CONF`: 订阅配置
@@ -122,48 +354,28 @@ jobs:
           - `SKIP_REMARK`: 是否跳过备注
           - `WORKFLOW_MODE`: 工作流模式
 
-          ## 使用方法
+          ## 在Render上使用
+
+          1. 创建一个新的Web Service
+          2. 使用Docker镜像: `your-username/task-runner:latest`
+          3. 添加必要的环境变量
+          4. 部署!
+
+          ## 本地运行
 
           ```bash
           docker run -d \
+            -p 8000:8000 \
+            -e PORT=8000 \
             -e GIST_PAT=your_github_token \
             -e GIST_LINK=username/gist_id \
-            -e CUSTOMIZE_LINK=your_customize_link \
-            -e ENABLE_SPECIAL_PROTOCOLS=true \
-            -e SUBSCRIBE_CONF=your_subscribe_conf \
-            -e PUSH_TOKEN=your_push_token \
-            -e REACHABLE=true \
-            -e SKIP_ALIVE_CHECK=false \
-            -e SKIP_REMARK=false \
-            -e WORKFLOW_MODE=your_workflow_mode \
             --name task-runner \
-            your-username/your-image-name:latest
+            your-username/task-runner:latest
           ```
 
-          或者使用docker-compose:
+          ## Web界面
 
-          ```yaml
-          version: '3'
-
-          services:
-            task-runner:
-              image: your-username/your-image-name:latest
-              container_name: task-runner
-              restart: always
-              environment:
-                - GIST_PAT=your_github_token
-                - GIST_LINK=username/gist_id
-                - CUSTOMIZE_LINK=your_customize_link
-                - ENABLE_SPECIAL_PROTOCOLS=true
-                - SUBSCRIBE_CONF=your_subscribe_conf
-                - PUSH_TOKEN=your_push_token
-                - REACHABLE=true
-                - SKIP_ALIVE_CHECK=false
-                - SKIP_REMARK=false
-                - WORKFLOW_MODE=your_workflow_mode
-              volumes:
-                - ./logs:/var/log
-          ```
+          部署后访问服务URL，您会看到一个简单的Web界面，可以手动触发各种任务并查看结果。
           EOF
 
       - name: Build and push Docker image
@@ -173,10 +385,9 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/task-runner:latest,${{ secrets.DOCKERHUB_USERNAME }}/task-runner:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
-          # 如果要使用README为Docker Hub提供说明
           labels: |
             org.opencontainers.image.title=Task Runner
-            org.opencontainers.image.description=Automated task runner with scheduled jobs
+            org.opencontainers.image.description=Automated task runner with web interface
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Update Docker Hub Description
@@ -186,4 +397,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/task-runner
           readme-filepath: ./README.docker.md
-          short-description: "Automated task runner with scheduled jobs"
+          short-description: "Task runner with web interface for Render"
